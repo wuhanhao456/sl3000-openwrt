@@ -44,9 +44,11 @@ jobs:
       - name: 添加 UA3F / rkp-ipid / passwall2 feed
         run: |
           cd openwrt
-          # 添加 UA3F 官方 openwrt 包
+          # 添加 UA3F（官方布局：整个仓库放 package/ua3f，
+          # Makefile 在 openwrt/ 子目录，用 ../go.mod 引用仓库根的 Go 源码；
+          # 若只复制 openwrt/ 子目录会导致 prepare 阶段找不到源码）
           git clone --depth 1 https://github.com/SunBK201/UA3F.git /tmp/UA3F
-          cp -r /tmp/UA3F/openwrt package/ua3f
+          cp -r /tmp/UA3F package/ua3f
           # 添加 rkp-ipid（Makefile 在仓库根目录）
           git clone --depth 1 https://github.com/CHN-beta/rkp-ipid.git /tmp/rkp-ipid
           mkdir -p package/rkp-ipid
@@ -80,21 +82,66 @@ jobs:
             feeds/packages/lang/golang/golang/Makefile
           echo "golang feed 已升级"
 
+      - name: 准备 golang 外部 bootstrap（go1.26 需 >=1.24 编译）
+        run: |
+          cd openwrt
+          # golang feed 自带 bootstrap 链只到 go1.20（1.4 -> 1.17 -> 1.20），
+          # 而 go1.26.8 源码要求编译它的 bootstrap 是 go1.24.6+（notgo124.go 检查）。
+          # 方案：下载官方 go1.24.13 linux-amd64 预编译包作外部 bootstrap，
+          # 并通过 GOLANG_EXTERNAL_BOOTSTRAP_ROOT 配置；同时把 Host/Make 的
+          # GOROOT_BOOTSTRAP 指向该外部 bootstrap（本地实测通过）。
+          GO_BOOTSTRAP_VER=go1.24.13
+          curl -fL --retry 3 -o /tmp/${GO_BOOTSTRAP_VER}.linux-amd64.tar.gz \
+            https://dl.google.com/go/${GO_BOOTSTRAP_VER}.linux-amd64.tar.gz
+          echo "1fc94b57134d51669c72173ad5d49fd62afb0f1db9bf3f798fd98ee423f8d730  /tmp/${GO_BOOTSTRAP_VER}.linux-amd64.tar.gz" | sha256sum -c -
+          mkdir -p /tmp/go-bootstrap
+          tar -C /tmp/go-bootstrap --strip-components=1 -xzf /tmp/${GO_BOOTSTRAP_VER}.linux-amd64.tar.gz
+          /tmp/go-bootstrap/bin/go version
+          # Host 编译 go1.26.8 时直接用外部 bootstrap，跳过 1.20 中间层
+          sed -i 's|GOROOT_BOOTSTRAP="\$(BOOTSTRAP_1_20_BUILD_DIR)"|GOROOT_BOOTSTRAP="$(BOOTSTRAP_ROOT_DIR)"|' \
+            feeds/packages/lang/golang/golang/Makefile
+          grep 'GOROOT_BOOTSTRAP="\$(BOOTSTRAP_ROOT_DIR)"' \
+            feeds/packages/lang/golang/golang/Makefile
+          echo "外部 bootstrap 就绪"
+
       - name: 生成 .config
         run: |
           cd openwrt
           cp $GITHUB_WORKSPACE/config/sl3000.config .config
+          # go1.26.8 需要外部 bootstrap（go1.24+）编译自身；
+          # 该配置必须存在于 .config，defconfig 才会保留
+          echo 'CONFIG_GOLANG_EXTERNAL_BOOTSTRAP_ROOT="/tmp/go-bootstrap"' >> .config
           make defconfig
+          grep GOLANG_EXTERNAL_BOOTSTRAP_ROOT .config
 
       - name: 下载依赖
         run: |
           cd openwrt
-          make download -j$(nproc) || make download -j1 V=s
+          # download.pl 自带多源 fallback（libxml2/acl 曾出现单源 404/502，
+          # 会自动切换镜像重试）。此处再做整层兜底：
+          # 并行下载失败后降级单线程重试，最多 3 轮，防止个别源抖动导致中断
+          for attempt in 1 2 3; do
+            echo "=== make download 第 $attempt 轮 ==="
+            if make download -j$(nproc) V=s; then
+              echo "依赖下载完成（第 $attempt 轮）"
+              break
+            fi
+            if make download -j1 V=s; then
+              echo "依赖下载完成（第 $attempt 轮，单线程降级）"
+              break
+            fi
+            echo "第 $attempt 轮仍有失败，稍后重试..."
+            sleep 30
+          done
+          # 3 轮后仍有失败则明确报错（避免带残缺 dl/ 进入编译）
+          make download -j1 V=s
 
       - name: 编译固件
         run: |
           cd openwrt
-          make -j$(nproc) V=s || make -j1 V=s
+          # 编译过程若因下载/资源问题中断，make 增量续编即可恢复；
+          # 先并行尝试，失败自动降级单线程重跑一轮
+          make -j$(nproc) V=s || make -j1 V=s || (make -j1 V=s && echo "重试后编译完成")
 
       - name: 收集固件
         run: |
