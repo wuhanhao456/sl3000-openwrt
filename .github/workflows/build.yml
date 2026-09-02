@@ -62,6 +62,24 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: 升级 golang feed 到 1.26.8（兼容 passwall2 依赖链）
+        run: |
+          cd openwrt
+          # 24.10 分支 golang 固定 1.23.12，而 passwall2 依赖链
+          # （geoview 0.2.6 / sing-box 1.14 / xray-core 26.x）要求 go >= 1.26。
+          # OpenWrt 构建强制 GOTOOLCHAIN=local，无法自动下载新工具链，
+          # 因此直接把 feeds 里 golang 包版本升级到 1.26.8。
+          sed -i 's/^GO_VERSION_MAJOR_MINOR:=1.23$/GO_VERSION_MAJOR_MINOR:=1.26/' \
+            feeds/packages/lang/golang/golang/Makefile
+          sed -i 's/^GO_VERSION_PATCH:=12$/GO_VERSION_PATCH:=8/' \
+            feeds/packages/lang/golang/golang/Makefile
+          # go1.26.8.src.tar.gz sha256
+          sed -i 's/^PKG_HASH:=e1cce9379a24e895714a412c7ddd157d2614d9edbe83a84449b6e1840b4f1226$/PKG_HASH:=4e39b98e42f946fa05ac8bc5b71877df97dbdb7cbb1a777b541667ad7117fd2e/' \
+            feeds/packages/lang/golang/golang/Makefile
+          grep -E '^(GO_VERSION_MAJOR_MINOR|GO_VERSION_PATCH|PKG_HASH)' \
+            feeds/packages/lang/golang/golang/Makefile
+          echo "golang feed 已升级"
+
       - name: 生成 .config
         run: |
           cd openwrt
