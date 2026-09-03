@@ -64,7 +64,17 @@ jobs:
           # 添加 passwall2 及其依赖
           git clone --depth 1 https://github.com/Openwrt-Passwall/openwrt-passwall2.git package/luci-app-passwall2
           git clone --depth 1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/passwall-packages
-          echo "UA3F / rkp-ipid / passwall2 已添加"
+          # 添加 mihomo-meta（nikki 依赖的代理内核）
+          git clone --depth 1 https://github.com/nikkinikki-org/OpenWrt-nikki.git /tmp/nikki
+          cp -r /tmp/nikki/mihomo-meta package/mihomo-meta
+          # 添加 nikki（透明代理，基于 mihomo）
+          cp -r /tmp/nikki/nikki package/nikki
+          cp -r /tmp/nikki/luci-app-nikki package/luci-app-nikki
+          # 添加 lucky（端口转发/DDNS/Web服务）
+          git clone --depth 1 https://github.com/gdy666/luci-app-lucky.git /tmp/lucky
+          cp -r /tmp/lucky/lucky package/lucky
+          cp -r /tmp/lucky/luci-app-lucky package/luci-app-lucky
+          echo "UA3F / rkp-ipid / passwall2 / mihomo-meta / nikki / lucky 已添加"
 
       - name: 更新 feeds
         run: |
