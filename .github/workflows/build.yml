@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 env:
   TZ: Asia/Shanghai
 
@@ -162,3 +165,15 @@ jobs:
         with:
           name: sl3000-immortalwrt-24.10
           path: bin/
+
+      - name: 发布 Release（产物自动进可下载版本）
+        run: |
+          TAG="v$(date +%Y.%m.%d-%H%M)"
+          gh release create "$TAG" bin/*.bin \
+            --title "SL-3000 ImmortalWrt 24.10 $TAG" \
+            --notes "自动构建。本次修复：
+          - emmc DTS 增加 SPI NOR 支持，eeprom 改从 NOR Factory 分区读取原厂校准
+          - eeprom fallback 文件对齐 mt76 驱动路径 (mediatek/mt7981_eeprom_mt7976_dbdc.bin)
+          下载 sl_3000-emmc-squashfs-sysupgrade.bin 后经 U-boot 刷入。" \
+            --latest
+          echo "Release $TAG 已发布"
