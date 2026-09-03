@@ -39,7 +39,12 @@ jobs:
             target/linux/mediatek/dts/
           # 应用设备注册补丁
           bash $GITHUB_WORKSPACE/scripts/add-sl3000-device.sh
+          # 复制无线校准文件到 files/（OpenWrt 编译时自动打包进 rootfs）
+          mkdir -p files
+          cp -r $GITHUB_WORKSPACE/devices/mediatek_filogic/diy/files/* files/
           echo "SL-3000 设备支持已添加"
+          echo "=== files 目录内容 ==="
+          find files -type f | sort
 
       - name: 添加 UA3F / rkp-ipid / passwall2 feed
         run: |
